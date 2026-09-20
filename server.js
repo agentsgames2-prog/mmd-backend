@@ -189,7 +189,7 @@ function runJob(task) {
       const title = await getTitle(task.url);
       const safe = (title || task.platform || "video")
         .replace(/[^\p{L}\p{N}\- ]+/gu, "").trim().slice(0, 60) || "video";
-      job.fileName = `${safe} [ToolKiva].${ext}`;
+      job.fileName = `${safe} [MMD].${ext}`;
       job.filePath = filePath;
       job.progress = 100;
       job.status = "Done!";
