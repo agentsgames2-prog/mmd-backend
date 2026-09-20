@@ -132,7 +132,7 @@ function enhanceVideo(filePath) {
       child = spawn("ffmpeg", ["-y", "-hide_banner", "-loglevel", "error",
         "-i", filePath, "-vf", vf,
         "-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
-        "-c:a", "copy", tmp]);
+        "-c:a", "copy", "-movflags", "+faststart", tmp]);
     } catch (e) { return resolve(false); }
     let done = false;
     const finish = (ok) => {
@@ -150,27 +150,39 @@ function enhanceVideo(filePath) {
 /* YouTube player clients to try in order — datacenter IPs get blocked on
    some clients, so we fall back automatically (fixes most "unavailable" errors). */
 const YT_CLIENTS = ["android", "ios", "web_embedded", "web"];
+/* TikTok API hosts to try in order — TikTok rate-limits/blocks datacenter IPs
+   per API host, so rotating the host fixes many "unavailable" failures. */
+const TIKTOK_HOSTS = [
+  "api22-normal-c-useast1a.tiktokv.com", /* default */
+  "api22-normal-c-useast2a.tiktokv.com",
+  "api16-normal-c-useast1a.tiktokv.com",
+  "api19-normal-c-useast1a.tiktokv.com",
+];
 /* permanent failures: retrying with another client will not help */
 const PERMANENT_RE = /private video|has been removed|has been deleted|video unavailable|unsupported url|no video formats found/i;
 
-function buildArgs(task, client) {
+function buildArgs(task, variant) {
   const H = task.quality;
   const args = baseArgs();
   args.push("--progress", "-o", path.join(DL_DIR, task.id + ".%(ext)s"));
+  /* TikTok: rotate API host (datacenter IP blocks are per-host) */
+  if (task.platform === "tiktok" && variant) {
+    args.push("--extractor-args", "tiktok:api_hostname=" + variant);
+  }
   if (task.mode === "mp3") {
     args.push("-x", "--audio-format", "mp3", "--audio-quality", task.bitrate + "K",
-              "--extractor-args", "youtube:player_client=" + client);
+              "--extractor-args", "youtube:player_client=" + (task.platform === "tiktok" ? "android" : variant));
   } else if (task.mode === "post") {
     /* post = whatever the post holds (video or images) */
     args.push("-f", "b",
               "--merge-output-format", "mp4",
               "--concurrent-fragments", "8",
-              "--extractor-args", "youtube:player_client=" + client);
+              "--extractor-args", "youtube:player_client=" + (task.platform === "tiktok" ? "android" : variant));
   } else {
     args.push("-f", `bv*[height<=${H}]+ba/b[height<=${H}]/b`,
               "--merge-output-format", "mp4",
               "--concurrent-fragments", "8", /* ultra-fast: parallel DASH fragments */
-              "--extractor-args", "youtube:player_client=" + client);
+              "--extractor-args", "youtube:player_client=" + (task.platform === "tiktok" ? "android" : variant));
   }
   args.push(task.url);
   return args;
@@ -181,7 +193,7 @@ function attemptDownload(task, job, client) {
     const args = buildArgs(task, client);
     job.status = task.mode === "mp3" ? "Extracting audio…" : "Downloading…";
     job.progress = 2;
-    console.log(`[job ${task.id}] starting yt-dlp (${task.mode}, <=${task.quality}p, client=${client})`);
+    console.log(`[job ${task.id}] starting yt-dlp (${task.mode}, <=${task.quality}p, variant=${client})`);
 
     let child;
     try {
@@ -225,11 +237,13 @@ async function runJob(task) {
 
   let failLog = "";
   let engineMissing = false;
-  for (const client of YT_CLIENTS) {
-    if (client !== YT_CLIENTS[0]) {
+  /* TikTok rotates API hosts; everyone else rotates YouTube player clients */
+  const variants = task.platform === "tiktok" ? TIKTOK_HOSTS : YT_CLIENTS;
+  for (const client of variants) {
+    if (client !== variants[0]) {
       job.status = `Retrying with alternate method…`;
       job.progress = Math.max(job.progress, 2);
-      console.log(`[job ${task.id}] retrying with player_client=${client}`);
+      console.log(`[job ${task.id}] retrying with variant=${client}`);
     }
     const r = await attemptDownload(task, job, client);
     if (r.ok) { failLog = ""; break; }
