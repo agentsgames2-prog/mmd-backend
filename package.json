@@ -1,0 +1,1 @@
+{"dependencies":{"cors":"^2.8.5","express":"^4.19.2"},"description":"ToolKiva video downloader backend — Node.js + yt-dlp + ffmpeg","engines":{"node":">=18"},"license":"MIT","main":"server.js","name":"toolkiva-downloader","scripts":{"start":"node server.js"},"version":"1.0.0"}
